@@ -71,6 +71,8 @@ import com.dexterous.flutterlocalnotifications.models.styles.DefaultStyleInforma
 import com.dexterous.flutterlocalnotifications.models.styles.InboxStyleInformation;
 import com.dexterous.flutterlocalnotifications.models.styles.MessagingStyleInformation;
 import com.dexterous.flutterlocalnotifications.models.styles.StyleInformation;
+import com.dexterous.flutterlocalnotifications.room.entity.ScheduleNotificationEntity;
+import com.dexterous.flutterlocalnotifications.room.repository.ScheduleNotificationRepository;
 import com.dexterous.flutterlocalnotifications.utils.BooleanUtils;
 import com.dexterous.flutterlocalnotifications.utils.LongUtils;
 import com.dexterous.flutterlocalnotifications.utils.StringUtils;
@@ -507,38 +509,33 @@ public class FlutterLocalNotificationsPlugin
   }
 
   private static ArrayList<NotificationDetails> loadScheduledNotifications(Context context) {
+    ScheduleNotificationRepository repository = ScheduleNotificationRepository.getInstance(context);
     ArrayList<NotificationDetails> scheduledNotifications = new ArrayList<>();
-    SharedPreferences sharedPreferences =
-        context.getSharedPreferences(SCHEDULED_NOTIFICATIONS, Context.MODE_PRIVATE);
-    String json = sharedPreferences.getString(SCHEDULED_NOTIFICATIONS, null);
-    if (json != null) {
-      Gson gson = buildGson();
-      Type type = new TypeToken<ArrayList<NotificationDetails>>() {}.getType();
-      scheduledNotifications = gson.fromJson(json, type);
-    }
-    return scheduledNotifications;
+    final List<ScheduleNotificationEntity> entities = repository.getAllNotificationEntity();
+      for (ScheduleNotificationEntity entity : entities) {
+          scheduledNotifications.add(entity.toNotificationDetails());
+      }
+      return scheduledNotifications;
   }
 
   private static void saveScheduledNotifications(
       Context context, ArrayList<NotificationDetails> scheduledNotifications) {
-    Gson gson = buildGson();
-    String json = gson.toJson(scheduledNotifications);
-    SharedPreferences sharedPreferences =
-        context.getSharedPreferences(SCHEDULED_NOTIFICATIONS, Context.MODE_PRIVATE);
-    SharedPreferences.Editor editor = sharedPreferences.edit();
-    editor.putString(SCHEDULED_NOTIFICATIONS, json).apply();
+        ScheduleNotificationRepository repository = ScheduleNotificationRepository.getInstance(context);
+        List<ScheduleNotificationEntity> entities = new ArrayList<>();
+        for (NotificationDetails notificationDetails : scheduledNotifications) {
+            entities.add(ScheduleNotificationEntity.fromNotificationDetails(notificationDetails));
+        }
+        repository.addNotificationsAsync(entities);
   }
 
   static void removeNotificationFromCache(Context context, Integer notificationId) {
-    ArrayList<NotificationDetails> scheduledNotifications = loadScheduledNotifications(context);
-    for (Iterator<NotificationDetails> it = scheduledNotifications.iterator(); it.hasNext(); ) {
-      NotificationDetails notificationDetails = it.next();
-      if (notificationDetails.id.equals(notificationId)) {
-        it.remove();
-        break;
-      }
-    }
-    saveScheduledNotifications(context, scheduledNotifications);
+      ScheduleNotificationRepository repository = ScheduleNotificationRepository.getInstance(context);
+      repository.deleteByIdAsync(notificationId);
+  }
+
+  private void deleteAllScheduleNotificationCached(Context context){
+      ScheduleNotificationRepository repository =  ScheduleNotificationRepository.getInstance(context);
+      repository.deleteAllNotification();
   }
 
   @SuppressWarnings("deprecation")
@@ -808,16 +805,11 @@ public class FlutterLocalNotificationsPlugin
 
   private static void saveScheduledNotification(
       Context context, NotificationDetails notificationDetails) {
-    ArrayList<NotificationDetails> scheduledNotifications = loadScheduledNotifications(context);
-    ArrayList<NotificationDetails> scheduledNotificationsToSave = new ArrayList<>();
-    for (NotificationDetails scheduledNotification : scheduledNotifications) {
-      if (scheduledNotification.id.equals(notificationDetails.id)) {
-        continue;
-      }
-      scheduledNotificationsToSave.add(scheduledNotification);
-    }
-    scheduledNotificationsToSave.add(notificationDetails);
-    saveScheduledNotifications(context, scheduledNotificationsToSave);
+        ScheduleNotificationRepository repository = ScheduleNotificationRepository.getInstance(context);
+        ScheduleNotificationEntity entity = ScheduleNotificationEntity.fromNotificationDetails(notificationDetails);
+        List<ScheduleNotificationEntity> entities = new ArrayList<>();
+        entities.add(entity);
+        repository.addNotificationsAsync(entities);
   }
 
   private static int getDrawableResourceId(Context context, String name) {
@@ -1841,7 +1833,7 @@ public class FlutterLocalNotificationsPlugin
       alarmManager.cancel(pendingIntent);
     }
 
-    saveScheduledNotifications(applicationContext, new ArrayList<>());
+    deleteAllScheduleNotificationCached(applicationContext);
     result.success(null);
   }
 
@@ -1863,7 +1855,7 @@ public class FlutterLocalNotificationsPlugin
       alarmManager.cancel(pendingIntent);
     }
 
-    saveScheduledNotifications(applicationContext, new ArrayList<>());
+    deleteAllScheduleNotificationCached(applicationContext);
     result.success(null);
   }
 
